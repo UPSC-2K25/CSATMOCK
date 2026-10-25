@@ -19,7 +19,6 @@
       <button id="btnPause" class="btn btn-outline" type="button">Pause</button>
       <button id="btnFullscreen" class="btn btn-outline" type="button">Fullscreen</button>
       <button id="btnSubmitTop" class="btn btn-danger" type="button">Submit Test</button>
-      <!-- Visible only in review mode -->
       <button id="btnRetakeTop" class="btn btn-primary" type="button" style="display: none;">Retake Test</button>
     </div>
   </header>
@@ -30,7 +29,7 @@
     <!-- Question Viewport -->
     <section class="question-viewport">
       
-      <!-- Passage Box (Strictly bounded height with internal scrolling) -->
+      <!-- Passage Box -->
       <div id="passageContainer" class="passage-card" style="display: none;">
         <div class="passage-title">Reading Comprehension Passage</div>
         <div id="passageText" class="passage-body"></div>
@@ -77,7 +76,6 @@
         <!-- While Review Actions -->
         <div id="reviewActions" class="btn-group" style="display: none;">
           <button id="btnNext" class="btn btn-primary" type="button">Next</button>
-          <button id="btnRetakeBottom" class="btn btn-outline" type="button">Retake Test</button>
         </div>
       </div>
     </section>
@@ -117,7 +115,7 @@
           </div>
         </div>
 
-        <!-- Year Selector (active for yearwise) -->
+        <!-- Year Selector -->
         <div class="form-group" id="yearSelectorGroup">
           <label class="form-label" for="selectedYear">Select Year:</label>
           <select id="selectedYear" class="form-select">
@@ -125,12 +123,20 @@
           </select>
         </div>
 
-        <!-- Number of Questions Input (Min 1, Max 80) -->
+        <!-- Number of Questions Input (Clean Input with dynamic placeholder) -->
         <div class="form-group">
           <label class="form-label" for="numQuestionsInput">
             Number of Questions (<span id="qCountLimits">1 - 80</span>):
           </label>
-          <input type="number" id="numQuestionsInput" class="form-input" min="1" max="80" value="80">
+          <input 
+            type="number" 
+            id="numQuestionsInput" 
+            class="form-input" 
+            min="1" 
+            max="80" 
+            value="80" 
+            placeholder="e.g. 1 - 80"
+          >
           <small class="form-hint" id="timerEstimateHint">Calculated duration: 120 minutes (90s / question)</small>
         </div>
 
