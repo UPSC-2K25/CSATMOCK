@@ -123,16 +123,10 @@
           </select>
         </div>
 
-        <!-- Live Pool Counter Banner -->
-        <div class="pool-banner" style="background: #e0f2fe; border: 1px solid #bae6fd; padding: 8px 12px; border-radius: 6px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
-          <span style="color: #0369a1; font-weight: 600;">Available in this Pool:</span>
-          <span id="poolAvailableCount" style="color: #0c4a6e; font-weight: 700; font-size: 0.95rem;">0 Questions</span>
-        </div>
-
-        <!-- Number of Questions Input -->
+        <!-- Number of Questions Input with inline pool counter -->
         <div class="form-group">
           <label class="form-label" for="numQuestionsInput">
-            Number of Questions to Attempt (<span id="qCountLimits">1 - 80</span>):
+            Number of Questions to Attempt (<span id="qCountLimits">1 - 80</span>) out of (<span id="poolAvailableCount">0</span>):
           </label>
           <input 
             type="number" 
