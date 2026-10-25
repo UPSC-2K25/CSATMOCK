@@ -419,8 +419,10 @@ function updateConfigLimits() {
   const poolInfo = getAvailablePoolInfo();
   const maxQ = Math.max(1, Math.min(80, poolInfo.count || 80));
 
-  // Update Pool Banner Counter
-  elements.poolAvailableCount.textContent = `${poolInfo.count} Questions (${poolInfo.label})`;
+  // Update inline "out of (x)" counter
+  if (elements.poolAvailableCount) {
+    elements.poolAvailableCount.textContent = poolInfo.count;
+  }
 
   // Update Input Bounds & Dynamic Placeholder
   elements.qCountLimits.textContent = `1 - ${maxQ}`;
