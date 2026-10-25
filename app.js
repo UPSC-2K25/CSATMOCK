@@ -247,16 +247,23 @@ function renderQuestion(index) {
   renderPalette();
 }
 
-// Right-Hand Question Palette
+// Replace renderPalette() with this clean, sequential builder:
 function renderPalette() {
   elements.paletteGrid.innerHTML = '';
+  
+  if (!state.activeQuestions || state.activeQuestions.length === 0) {
+    elements.paletteCount.textContent = '0/0';
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
   let attemptedCount = 0;
 
   state.activeQuestions.forEach((q, i) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'q-btn';
-    btn.textContent = i + 1;
+    btn.textContent = i + 1; // Strictly sequential: 1, 2, 3 ... N
 
     if (i === state.currentIndex) {
       btn.classList.add('active');
@@ -267,8 +274,10 @@ function renderPalette() {
     if (isAttempted) attemptedCount++;
 
     if (!state.isReviewMode) {
+      // Pre-submit: Green for attempted, no color for unattempted
       if (isAttempted) btn.classList.add('attempted');
     } else {
+      // Review mode: Green for correct, Red for wrong, no color for unattempted
       if (isAttempted) {
         if (userAns === q.answer) btn.classList.add('rev-correct');
         else btn.classList.add('rev-wrong');
@@ -279,9 +288,10 @@ function renderPalette() {
       renderQuestion(i);
     });
 
-    elements.paletteGrid.appendChild(btn);
+    fragment.appendChild(btn);
   });
 
+  elements.paletteGrid.appendChild(fragment);
   elements.paletteCount.textContent = `${attemptedCount}/${state.activeQuestions.length}`;
 }
 
