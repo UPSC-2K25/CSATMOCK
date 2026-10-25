@@ -5,9 +5,10 @@ const state = {
   timeRemaining: 120 * 60,
   timerId: null,
   isPaused: false,
-  questions: [],
-  passages: {},
-  userAnswers: {} // index -> 'A' | 'B' | 'C' | 'D'
+  allQuestions: [],     // Master bank from JSON
+  activeQuestions: [],  // Currently loaded mock subset
+  passages: {},         // passageid -> text
+  userAnswers: {}       // currentIndex -> 'A' | 'B' | 'C' | 'D'
 };
 
 // DOM References
@@ -17,10 +18,14 @@ const elements = {
   btnPause: document.getElementById('btnPause'),
   btnFullscreen: document.getElementById('btnFullscreen'),
   btnSubmitTop: document.getElementById('btnSubmitTop'),
+  btnRetakeTop: document.getElementById('btnRetakeTop'),
+  btnRetakeBottom: document.getElementById('btnRetakeBottom'),
   passageContainer: document.getElementById('passageContainer'),
   passageText: document.getElementById('passageText'),
   questionNumber: document.getElementById('questionNumber'),
+  reviewMetaGroup: document.getElementById('reviewMetaGroup'),
   topicTag: document.getElementById('topicTag'),
+  sourceTag: document.getElementById('sourceTag'),
   questionText: document.getElementById('questionText'),
   optionsContainer: document.getElementById('optionsContainer'),
   reviewDetails: document.getElementById('reviewDetails'),
@@ -37,6 +42,11 @@ const elements = {
   paletteCount: document.getElementById('paletteCount'),
   paletteLegend: document.getElementById('paletteLegend'),
   startModal: document.getElementById('startModal'),
+  selectedYear: document.getElementById('selectedYear'),
+  yearSelectorGroup: document.getElementById('yearSelectorGroup'),
+  numQuestionsInput: document.getElementById('numQuestionsInput'),
+  qCountLimits: document.getElementById('qCountLimits'),
+  timerEstimateHint: document.getElementById('timerEstimateHint'),
   btnStartConfirmed: document.getElementById('btnStartConfirmed'),
   submitModal: document.getElementById('submitModal'),
   submitSummaryStats: document.getElementById('submitSummaryStats'),
@@ -46,28 +56,29 @@ const elements = {
   btnEnterReview: document.getElementById('btnEnterReview')
 };
 
-// Data Fetching
+// Load Passages and Questions (supports 2024, expandable to 2023, 2022, etc.)
 async function loadTestData() {
   try {
-    const [passRes, questRes] = await Promise.all([
-      fetch('passage.json').catch(err => { console.warn('passage.json fetch failed:', err); return null; }),
-      fetch('questions_2024.json').catch(err => { console.warn('questions_2024.json fetch failed:', err); return null; })
+    const [passRes, quest2024Res] = await Promise.all([
+      fetch('passage.json').catch(e => { console.warn('passage.json load error', e); return null; }),
+      fetch('questions_2024.json').catch(e => { console.warn('questions_2024.json load error', e); return null; })
     ]);
 
     if (passRes && passRes.ok) {
-      const passData = await passRes.json();
-      passData.forEach(p => { state.passages[p.passageid] = p.passage; });
+      const pData = await passRes.json();
+      pData.forEach(p => { state.passages[p.passageid] = p.passage; });
     }
 
-    if (questRes && questRes.ok) {
-      state.questions = await questRes.json();
+    if (quest2024Res && quest2024Res.ok) {
+      const q2024 = await quest2024Res.json();
+      state.allQuestions = [...state.allQuestions, ...q2024];
     }
   } catch (err) {
-    console.error('Error loading JSON data:', err);
+    console.error('Data initialization failure:', err);
   }
 }
 
-// Timer Functions
+// Timer Logic (UPSC Standard: 90 seconds per question)
 function startTimer() {
   if (state.timerId) clearInterval(state.timerId);
   state.timerId = setInterval(() => {
@@ -93,43 +104,44 @@ function renderTimer() {
 function toggleFullScreen() {
   const doc = window.document;
   const docEl = doc.documentElement;
+  const req = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.msRequestFullscreen;
+  const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
 
-  const requestFull = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
-  const cancelFull = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
-
-  if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
-    if (requestFull) requestFull.call(docEl).catch(() => {});
+  if (!doc.fullscreenElement && !doc.webkitFullscreenElement) {
+    if (req) req.call(docEl).catch(() => {});
     elements.btnFullscreen.textContent = "Exit Fullscreen";
   } else {
-    if (cancelFull) cancelFull.call(doc).catch(() => {});
+    if (exit) exit.call(doc).catch(() => {});
     elements.btnFullscreen.textContent = "Fullscreen";
   }
 }
 
-// Question Rendering
+// Render Question
 function renderQuestion(index) {
-  if (!state.questions || state.questions.length === 0) return;
+  if (!state.activeQuestions || state.activeQuestions.length === 0) return;
   state.currentIndex = index;
-  const q = state.questions[index];
+  const q = state.activeQuestions[index];
 
-  // 1. Passage Rendering (Above Question)
+  // 1. Passage Rendering (Rendered above question with internal scroll)
   if (q.passageid && state.passages[q.passageid]) {
-    elements.passageContainer.style.display = 'block';
+    elements.passageContainer.style.display = 'flex';
     elements.passageText.textContent = state.passages[q.passageid];
+    elements.passageText.scrollTop = 0; // Reset scroll to top
   } else {
     elements.passageContainer.style.display = 'none';
   }
 
-  // 2. Question Text & Header
-  elements.questionNumber.textContent = `Question ${index + 1} of ${state.questions.length}`;
+  // 2. Question Number & Metadata
+  elements.questionNumber.textContent = `Question ${index + 1} of ${state.activeQuestions.length}`;
   elements.questionText.textContent = q.question;
 
-  // 3. Topic: Displayed strictly during Review Mode
-  if (state.isReviewMode && q.topic) {
-    elements.topicTag.style.display = 'inline-block';
-    elements.topicTag.textContent = q.topic;
+  // 3. Topic & Year/QNo: Strictly shown only during Review
+  if (state.isReviewMode) {
+    elements.reviewMetaGroup.style.display = 'flex';
+    elements.topicTag.textContent = q.topic || 'General Aptitude';
+    elements.sourceTag.textContent = `Year: ${q.year || '2024'} | PYQ QNo: ${q.qno || (index + 1)}`;
   } else {
-    elements.topicTag.style.display = 'none';
+    elements.reviewMetaGroup.style.display = 'none';
   }
 
   // 4. Options
@@ -164,7 +176,7 @@ function renderQuestion(index) {
     elements.optionsContainer.appendChild(label);
   });
 
-  // 5. Review Info Box
+  // 5. Review Explanation Box
   if (state.isReviewMode) {
     elements.reviewDetails.style.display = 'block';
     const isAnswered = currentSelected !== undefined;
@@ -188,12 +200,12 @@ function renderQuestion(index) {
   renderPalette();
 }
 
-// Palette Rendering
+// Right-Hand Question Palette
 function renderPalette() {
   elements.paletteGrid.innerHTML = '';
   let attemptedCount = 0;
 
-  state.questions.forEach((q, i) => {
+  state.activeQuestions.forEach((q, i) => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'q-btn';
@@ -209,17 +221,12 @@ function renderPalette() {
 
     if (!state.isReviewMode) {
       // Rule: Attempted Green, Unattempted no color
-      if (isAttempted) {
-        btn.classList.add('attempted');
-      }
+      if (isAttempted) btn.classList.add('attempted');
     } else {
       // Rule: Review -> Correct Green, Wrong Red, Unattempted no color
       if (isAttempted) {
-        if (userAns === q.answer) {
-          btn.classList.add('rev-correct');
-        } else {
-          btn.classList.add('rev-wrong');
-        }
+        if (userAns === q.answer) btn.classList.add('rev-correct');
+        else btn.classList.add('rev-wrong');
       }
     }
 
@@ -230,7 +237,7 @@ function renderPalette() {
     elements.paletteGrid.appendChild(btn);
   });
 
-  elements.paletteCount.textContent = `${attemptedCount}/${state.questions.length}`;
+  elements.paletteCount.textContent = `${attemptedCount}/${state.activeQuestions.length}`;
 }
 
 // Clear Response
@@ -240,10 +247,10 @@ function clearResponse() {
   renderQuestion(state.currentIndex);
 }
 
-// Submission and Scoring
+// Submit Test & Calculate UPSC CSAT Scores
 function showSubmitConfirmation() {
   const attempted = Object.keys(state.userAnswers).length;
-  const unattempted = state.questions.length - attempted;
+  const unattempted = state.activeQuestions.length - attempted;
   elements.submitSummaryStats.textContent = `Attempted: ${attempted} | Unattempted: ${unattempted}`;
   elements.submitModal.style.display = 'flex';
 }
@@ -255,7 +262,7 @@ function handleTestSubmit() {
   let correct = 0;
   let wrong = 0;
 
-  state.questions.forEach((q, idx) => {
+  state.activeQuestions.forEach((q, idx) => {
     const userChoice = state.userAnswers[idx];
     if (userChoice) {
       if (userChoice === q.answer) correct++;
@@ -263,25 +270,28 @@ function handleTestSubmit() {
     }
   });
 
-  const total = state.questions.length;
+  const total = state.activeQuestions.length;
   const unattempted = total - (correct + wrong);
   const score = (correct * 2.5) - (wrong * (2.5 / 3));
-  const isQualified = score >= 66.0;
+  const maxPossible = total * 2.5;
+  const passThreshold = maxPossible * 0.33; // 33% qualifying
+  const isQualified = score >= passThreshold;
 
   document.getElementById('resTotal').textContent = total;
   document.getElementById('resAttempted').textContent = correct + wrong;
   document.getElementById('resUnattempted').textContent = unattempted;
   document.getElementById('resCorrect').textContent = correct;
   document.getElementById('resWrong').textContent = wrong;
-  document.getElementById('resFinalScore').textContent = `${score.toFixed(2)} / 200`;
+  document.getElementById('resFinalScore').textContent = `${score.toFixed(2)} / ${maxPossible.toFixed(1)}`;
 
   const statusEl = document.getElementById('resStatus');
-  statusEl.textContent = isQualified ? "QUALIFIED" : "NOT QUALIFIED";
+  statusEl.textContent = isQualified ? "QUALIFIED (≥ 33%)" : "NOT QUALIFIED (< 33%)";
   statusEl.style.color = isQualified ? "var(--green-attempted)" : "var(--red-wrong)";
 
   elements.resultModal.style.display = 'flex';
 }
 
+// Enter Review Mode
 function enterReviewMode() {
   elements.resultModal.style.display = 'none';
   state.isReviewMode = true;
@@ -290,12 +300,11 @@ function enterReviewMode() {
   elements.timerDisplay.textContent = "Review Mode";
   elements.btnPause.style.display = 'none';
   elements.btnSubmitTop.style.display = 'none';
+  elements.btnRetakeTop.style.display = 'inline-block';
 
-  // Toggle button bars
   elements.attemptActions.style.display = 'none';
   elements.reviewActions.style.display = 'flex';
 
-  // Update Legend
   elements.paletteLegend.innerHTML = `
     <strong>Review Status:</strong><br>
     Correct: <span style="color: var(--green-attempted); font-weight: bold;">Green</span> | 
@@ -306,14 +315,74 @@ function enterReviewMode() {
   renderQuestion(0);
 }
 
-// Event Listeners
+// Retake / Reset Test
+function resetToStartModal() {
+  if (state.timerId) clearInterval(state.timerId);
+
+  // Reset State
+  state.isReviewMode = false;
+  state.currentIndex = 0;
+  state.isPaused = false;
+  state.userAnswers = {};
+
+  // Reset UI Controls
+  elements.appHeaderTitle.textContent = "UPSC CSAT Mock Test Engine";
+  elements.btnPause.style.display = 'inline-block';
+  elements.btnPause.textContent = "Pause";
+  elements.btnSubmitTop.style.display = 'inline-block';
+  elements.btnRetakeTop.style.display = 'none';
+
+  elements.attemptActions.style.display = 'flex';
+  elements.reviewActions.style.display = 'none';
+  elements.reviewDetails.style.display = 'none';
+  elements.reviewMetaGroup.style.display = 'none';
+
+  elements.paletteLegend.innerHTML = `
+    <strong>Status:</strong><br>
+    Attempted: <span class="legend-attempted">Green</span> | Unattempted: <span>No Color</span>
+  `;
+
+  // Open config modal
+  elements.resultModal.style.display = 'none';
+  elements.submitModal.style.display = 'none';
+  elements.startModal.style.display = 'flex';
+}
+
+// Modal Form Updates (Dynamic Time Calculation)
+function updateConfigLimits() {
+  const mode = document.querySelector('input[name="mockMode"]:checked').value;
+  let availablePool = state.allQuestions;
+
+  if (mode === 'yearwise') {
+    elements.yearSelectorGroup.style.display = 'block';
+    const yr = parseInt(elements.selectedYear.value, 10);
+    availablePool = state.allQuestions.filter(q => q.year === yr);
+  } else {
+    elements.yearSelectorGroup.style.display = 'none';
+  }
+
+  const maxQ = Math.max(1, Math.min(80, availablePool.length || 80));
+  elements.qCountLimits.textContent = `1 - ${maxQ}`;
+  elements.numQuestionsInput.max = maxQ;
+
+  let currentVal = parseInt(elements.numQuestionsInput.value, 10);
+  if (isNaN(currentVal) || currentVal < 1) currentVal = maxQ;
+  if (currentVal > maxQ) currentVal = maxQ;
+  elements.numQuestionsInput.value = currentVal;
+
+  // 90s (1.5 min) per question
+  const totalSeconds = currentVal * 90;
+  const mins = Math.floor(totalSeconds / 60);
+  elements.timerEstimateHint.textContent = `Calculated duration: ${mins} minutes (90s / question)`;
+}
+
+// Attach Event Handlers
 function setupEventListeners() {
   elements.btnFullscreen.addEventListener('click', toggleFullScreen);
 
   elements.btnPause.addEventListener('click', () => {
     state.isPaused = !state.isPaused;
     elements.btnPause.textContent = state.isPaused ? "Resume" : "Pause";
-    elements.btnPause.classList.toggle('btn-primary', state.isPaused);
   });
 
   elements.btnSubmitTop.addEventListener('click', showSubmitConfirmation);
@@ -323,16 +392,20 @@ function setupEventListeners() {
   elements.btnConfirmSubmit.addEventListener('click', handleTestSubmit);
   elements.btnEnterReview.addEventListener('click', enterReviewMode);
 
+  // Retake handlers
+  elements.btnRetakeTop.addEventListener('click', resetToStartModal);
+  elements.btnRetakeBottom.addEventListener('click', resetToStartModal);
+
   elements.btnClear.addEventListener('click', clearResponse);
 
   elements.btnSaveNext.addEventListener('click', () => {
-    if (state.currentIndex < state.questions.length - 1) {
+    if (state.currentIndex < state.activeQuestions.length - 1) {
       renderQuestion(state.currentIndex + 1);
     }
   });
 
   elements.btnNext.addEventListener('click', () => {
-    if (state.currentIndex < state.questions.length - 1) {
+    if (state.currentIndex < state.activeQuestions.length - 1) {
       renderQuestion(state.currentIndex + 1);
     }
   });
@@ -343,18 +416,33 @@ function setupEventListeners() {
     }
   });
 
-  elements.btnStartConfirmed.addEventListener('click', () => {
-    const selectedMode = document.querySelector('input[name="testMode"]:checked').value;
+  // Modal interaction listeners
+  document.querySelectorAll('input[name="mockMode"]').forEach(radio => {
+    radio.addEventListener('change', updateConfigLimits);
+  });
+  elements.selectedYear.addEventListener('change', updateConfigLimits);
+  elements.numQuestionsInput.addEventListener('input', updateConfigLimits);
 
-    if (selectedMode === 'mixed_20') {
-      state.questions = state.questions.slice(0, 20);
-      state.timeRemaining = 30 * 60;
-    } else if (selectedMode === 'mixed_40') {
-      state.questions = state.questions.slice(0, 40);
-      state.timeRemaining = 60 * 60;
+  // Start Exam Confirmed
+  elements.btnStartConfirmed.addEventListener('click', () => {
+    const mode = document.querySelector('input[name="mockMode"]:checked').value;
+    let pool = [...state.allQuestions];
+
+    if (mode === 'yearwise') {
+      const yr = parseInt(elements.selectedYear.value, 10);
+      pool = pool.filter(q => q.year === yr);
     } else {
-      state.timeRemaining = 120 * 60;
+      // Custom mock across all years: shuffle pool
+      pool.sort(() => Math.random() - 0.5);
     }
+
+    const requestedCount = parseInt(elements.numQuestionsInput.value, 10) || 80;
+    const actualCount = Math.min(requestedCount, pool.length);
+
+    state.activeQuestions = pool.slice(0, actualCount);
+
+    // UPSC CSAT Standard Time: 90 seconds (1.5 minutes) per question
+    state.timeRemaining = actualCount * 90;
 
     elements.startModal.style.display = 'none';
     renderQuestion(0);
@@ -366,7 +454,7 @@ function setupEventListeners() {
 async function init() {
   setupEventListeners();
   await loadTestData();
-  renderTimer();
+  updateConfigLimits();
 }
 
 window.addEventListener('DOMContentLoaded', init);
