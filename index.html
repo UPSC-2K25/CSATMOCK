@@ -115,18 +115,24 @@
           </div>
         </div>
 
-        <!-- Year Selector -->
+        <!-- Year Selector: Dynamically populated by app.js -->
         <div class="form-group" id="yearSelectorGroup">
           <label class="form-label" for="selectedYear">Select Year:</label>
           <select id="selectedYear" class="form-select">
-            <option value="2024" selected>2024 (Official PYQ)</option>
+            <option value="">Scanning repository for question files...</option>
           </select>
         </div>
 
-        <!-- Number of Questions Input (Clean Input with dynamic placeholder) -->
+        <!-- Live Pool Counter Banner -->
+        <div class="pool-banner" style="background: #e0f2fe; border: 1px solid #bae6fd; padding: 8px 12px; border-radius: 6px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem;">
+          <span style="color: #0369a1; font-weight: 600;">Available in this Pool:</span>
+          <span id="poolAvailableCount" style="color: #0c4a6e; font-weight: 700; font-size: 0.95rem;">0 Questions</span>
+        </div>
+
+        <!-- Number of Questions Input -->
         <div class="form-group">
           <label class="form-label" for="numQuestionsInput">
-            Number of Questions (<span id="qCountLimits">1 - 80</span>):
+            Number of Questions to Attempt (<span id="qCountLimits">1 - 80</span>):
           </label>
           <input 
             type="number" 
