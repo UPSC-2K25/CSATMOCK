@@ -19,34 +19,40 @@
       <button id="btnPause" class="btn btn-outline" type="button">Pause</button>
       <button id="btnFullscreen" class="btn btn-outline" type="button">Fullscreen</button>
       <button id="btnSubmitTop" class="btn btn-danger" type="button">Submit Test</button>
+      <!-- Visible only in review mode -->
+      <button id="btnRetakeTop" class="btn btn-primary" type="button" style="display: none;">Retake Test</button>
     </div>
   </header>
 
-  <!-- Main Container: 70-75% Left Workspace / 25-30% Right Palette -->
+  <!-- Main Viewport: 72% Question Workspace / 28% Question Palette -->
   <main class="test-container">
     
-    <!-- Question Viewport (Occupies 72% screen width) -->
+    <!-- Question Viewport -->
     <section class="question-viewport">
       
-      <!-- Passage Box (Stacked Above Question) -->
+      <!-- Passage Box (Strictly bounded height with internal scrolling) -->
       <div id="passageContainer" class="passage-card" style="display: none;">
-        <strong>Passage</strong>
-        <p id="passageText"></p>
+        <div class="passage-title">Reading Comprehension Passage</div>
+        <div id="passageText" class="passage-body"></div>
       </div>
 
       <!-- Question Card -->
       <div class="question-card">
         <div class="question-header">
           <span id="questionNumber" class="q-number">Question 1</span>
-          <!-- Topic: Visible only during review -->
-          <span id="topicTag" class="topic-tag" style="display: none;"></span>
+          
+          <!-- Review Only Meta: Topic + Year + Original QNo -->
+          <div id="reviewMetaGroup" class="review-meta-group" style="display: none;">
+            <span id="topicTag" class="tag tag-topic"></span>
+            <span id="sourceTag" class="tag tag-source"></span>
+          </div>
         </div>
 
         <div id="questionText" class="q-text">Loading question content...</div>
 
         <div id="optionsContainer" class="options-group"></div>
 
-        <!-- Review Details: Visible only during review -->
+        <!-- Review Detailed Explanation -->
         <div id="reviewDetails" class="review-box" style="display: none;">
           <div class="review-meta">
             <span id="userStatusText"></span>
@@ -56,7 +62,7 @@
         </div>
       </div>
 
-      <!-- Action Navigation Buttons -->
+      <!-- Bottom Button Bar -->
       <div class="bottom-bar">
         <div class="btn-group">
           <button id="btnPrev" class="btn btn-outline" type="button">Previous</button>
@@ -71,11 +77,12 @@
         <!-- While Review Actions -->
         <div id="reviewActions" class="btn-group" style="display: none;">
           <button id="btnNext" class="btn btn-primary" type="button">Next</button>
+          <button id="btnRetakeBottom" class="btn btn-outline" type="button">Retake Test</button>
         </div>
       </div>
     </section>
 
-    <!-- Right-Hand Question Palette (Occupies 28% screen width) -->
+    <!-- Right-Hand Question Palette -->
     <aside class="right-palette">
       <div class="palette-header">
         <span>Question Palette</span>
@@ -89,26 +96,44 @@
     </aside>
   </main>
 
-  <!-- Start Modal -->
+  <!-- Start & Configuration Modal -->
   <div id="startModal" class="modal-backdrop">
     <div class="modal-card">
-      <h2 class="modal-title">Select Mock Test</h2>
+      <h2 class="modal-title">Configure Mock Test</h2>
       <div class="modal-body">
-        <p style="margin-bottom: 12px;">Choose your mock format:</p>
-        <div class="mode-options">
-          <label>
-            <input type="radio" name="testMode" value="year_2024" checked>
-            <span><strong>2024 Full Mock</strong> (All 80 Questions, 120 Mins)</span>
-          </label>
-          <label>
-            <input type="radio" name="testMode" value="mixed_20">
-            <span><strong>Mini Mock</strong> (20 Questions - Mixed, 30 Mins)</span>
-          </label>
-          <label>
-            <input type="radio" name="testMode" value="mixed_40">
-            <span><strong>Half Mock</strong> (40 Questions - Mixed, 60 Mins)</span>
-          </label>
+        
+        <!-- Mode Chooser -->
+        <div class="form-group">
+          <label class="form-label">Mock Type:</label>
+          <div class="radio-group">
+            <label>
+              <input type="radio" name="mockMode" value="yearwise" checked>
+              <span>Year-wise Mock</span>
+            </label>
+            <label>
+              <input type="radio" name="mockMode" value="custom">
+              <span>Custom Mock (All Years)</span>
+            </label>
+          </div>
         </div>
+
+        <!-- Year Selector (active for yearwise) -->
+        <div class="form-group" id="yearSelectorGroup">
+          <label class="form-label" for="selectedYear">Select Year:</label>
+          <select id="selectedYear" class="form-select">
+            <option value="2024" selected>2024 (Official PYQ)</option>
+          </select>
+        </div>
+
+        <!-- Number of Questions Input (Min 1, Max 80) -->
+        <div class="form-group">
+          <label class="form-label" for="numQuestionsInput">
+            Number of Questions (<span id="qCountLimits">1 - 80</span>):
+          </label>
+          <input type="number" id="numQuestionsInput" class="form-input" min="1" max="80" value="80">
+          <small class="form-hint" id="timerEstimateHint">Calculated duration: 120 minutes (90s / question)</small>
+        </div>
+
       </div>
       <div style="text-align: right;">
         <button id="btnStartConfirmed" class="btn btn-primary" type="button">Start Exam</button>
@@ -122,7 +147,7 @@
       <h2 class="modal-title">Confirm Submission</h2>
       <div class="modal-body">
         <p>Are you sure you want to finish and submit the test?</p>
-        <p style="margin-top: 10px;" id="submitSummaryStats"></p>
+        <p style="margin-top: 10px; font-weight: 600;" id="submitSummaryStats"></p>
       </div>
       <div class="modal-actions">
         <button id="btnCancelSubmit" class="btn btn-outline" type="button">Return to Test</button>
@@ -143,16 +168,15 @@
           <tr><td>Correct (+2.5):</td><td id="resCorrect" style="color: var(--green-attempted);">0</td></tr>
           <tr><td>Incorrect (-0.833):</td><td id="resWrong" style="color: var(--red-wrong);">0</td></tr>
           <tr><td>Final Score:</td><td id="resFinalScore" style="font-size: 1.15rem;">0.00 / 200</td></tr>
-          <tr><td>UPSC Qualifier (≥ 66 marks):</td><td id="resStatus">--</td></tr>
+          <tr><td>UPSC Qualifier (≥ 33%):</td><td id="resStatus">--</td></tr>
         </table>
       </div>
-      <div style="text-align: right;">
+      <div class="modal-actions">
         <button id="btnEnterReview" class="btn btn-primary" type="button">Review Test</button>
       </div>
     </div>
   </div>
 
-  <!-- External Script File -->
   <script src="app.js"></script>
 </body>
 </html>
