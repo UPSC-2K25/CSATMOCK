@@ -1,17 +1,23 @@
-// State Management
+// ==========================================
+// 1. DYNAMIC CONFIGURATION & MASTER REGISTRY
+// ==========================================
+const YEARS_CONFIG = [2024, 2023, 2022, 2021, 2020];
+
+// State Store
 const state = {
   isReviewMode: false,
   currentIndex: 0,
   timeRemaining: 120 * 60,
   timerId: null,
   isPaused: false,
-  allQuestions: [],     // Master bank from JSON
-  activeQuestions: [],  // Currently loaded mock subset
-  passages: {},         // passageid -> text
+  allQuestions: [],     // All questions loaded from all detected files
+  availableYears: [],   // Detected available years
+  activeQuestions: [],  // Questions in current test session
+  passages: {},         // Keyed by passageid
   userAnswers: {}       // currentIndex -> 'A' | 'B' | 'C' | 'D'
 };
 
-// DOM References
+// DOM Elements
 const elements = {
   appHeaderTitle: document.getElementById('appHeaderTitle'),
   timerDisplay: document.getElementById('timerDisplay'),
@@ -43,6 +49,7 @@ const elements = {
   startModal: document.getElementById('startModal'),
   selectedYear: document.getElementById('selectedYear'),
   yearSelectorGroup: document.getElementById('yearSelectorGroup'),
+  poolAvailableCount: document.getElementById('poolAvailableCount'),
   numQuestionsInput: document.getElementById('numQuestionsInput'),
   qCountLimits: document.getElementById('qCountLimits'),
   timerEstimateHint: document.getElementById('timerEstimateHint'),
@@ -55,29 +62,68 @@ const elements = {
   btnEnterReview: document.getElementById('btnEnterReview')
 };
 
-// Load Passages and Questions
+// ==========================================
+// 2. DYNAMIC ASYNCHRONOUS DATA LOADER
+// ==========================================
 async function loadTestData() {
+  // A. Load Central Passages
   try {
-    const [passRes, quest2024Res] = await Promise.all([
-      fetch('passage.json').catch(e => { console.warn('passage.json load error', e); return null; }),
-      fetch('questions_2024.json').catch(e => { console.warn('questions_2024.json load error', e); return null; })
-    ]);
-
+    const passRes = await fetch('passage.json').catch(() => null) || 
+                    await fetch('passages.json').catch(() => null);
     if (passRes && passRes.ok) {
       const pData = await passRes.json();
       pData.forEach(p => { state.passages[p.passageid] = p.passage; });
     }
+  } catch (e) {
+    console.warn('Passage file not loaded:', e);
+  }
 
-    if (quest2024Res && quest2024Res.ok) {
-      const q2024 = await quest2024Res.json();
-      state.allQuestions = [...state.allQuestions, ...q2024];
+  // B. Fetch all question files in parallel
+  const yearFetchPromises = YEARS_CONFIG.map(async (yr) => {
+    try {
+      const res = await fetch(`questions_${yr}.json`);
+      if (res.ok) {
+        const data = await res.json();
+        data.forEach(q => { if (!q.year) q.year = yr; });
+        return { year: yr, questions: data };
+      }
+    } catch (_) {}
+    return null;
+  });
+
+  const results = await Promise.all(yearFetchPromises);
+  const foundYears = new Set();
+
+  results.forEach(res => {
+    if (res && Array.isArray(res.questions) && res.questions.length > 0) {
+      state.allQuestions.push(...res.questions);
+      foundYears.add(res.year);
     }
-  } catch (err) {
-    console.error('Data initialization failure:', err);
+  });
+
+  state.availableYears = Array.from(foundYears).sort((a, b) => b - a);
+
+  // C. Populate Year Dropdown
+  elements.selectedYear.innerHTML = '';
+  if (state.availableYears.length > 0) {
+    state.availableYears.forEach(yr => {
+      const opt = document.createElement('option');
+      opt.value = yr;
+      const count = state.allQuestions.filter(q => q.year === yr).length;
+      opt.textContent = `${yr} (${count} Questions)`;
+      elements.selectedYear.appendChild(opt);
+    });
+  } else {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No question files detected';
+    elements.selectedYear.appendChild(opt);
   }
 }
 
-// Timer Logic (UPSC Standard: 90 seconds per question)
+// ==========================================
+// 3. TIMER LOGIC (90s / Question)
+// ==========================================
 function startTimer() {
   if (state.timerId) clearInterval(state.timerId);
   state.timerId = setInterval(() => {
@@ -115,13 +161,15 @@ function toggleFullScreen() {
   }
 }
 
-// Render Question
+// ==========================================
+// 4. QUESTION & PASSAGE RENDERING
+// ==========================================
 function renderQuestion(index) {
   if (!state.activeQuestions || state.activeQuestions.length === 0) return;
   state.currentIndex = index;
   const q = state.activeQuestions[index];
 
-  // 1. Passage Rendering
+  // 1. Passage Rendering (Rendered above question with internal scroll)
   if (q.passageid && state.passages[q.passageid]) {
     elements.passageContainer.style.display = 'flex';
     elements.passageText.textContent = state.passages[q.passageid];
@@ -130,15 +178,15 @@ function renderQuestion(index) {
     elements.passageContainer.style.display = 'none';
   }
 
-  // 2. Question Number & Metadata
+  // 2. Question Text & Header
   elements.questionNumber.textContent = `Question ${index + 1} of ${state.activeQuestions.length}`;
   elements.questionText.textContent = q.question;
 
-  // 3. Topic & Year/QNo: Shown only during Review
+  // 3. Topic & Source Meta: Strictly visible ONLY in Review Mode
   if (state.isReviewMode) {
     elements.reviewMetaGroup.style.display = 'flex';
     elements.topicTag.textContent = q.topic || 'General Aptitude';
-    elements.sourceTag.textContent = `Year: ${q.year || '2024'} | PYQ QNo: ${q.qno || (index + 1)}`;
+    elements.sourceTag.textContent = `Year: ${q.year || 'N/A'} | PYQ QNo: ${q.qno || (index + 1)}`;
   } else {
     elements.reviewMetaGroup.style.display = 'none';
   }
@@ -175,7 +223,7 @@ function renderQuestion(index) {
     elements.optionsContainer.appendChild(label);
   });
 
-  // 5. Review Explanation Box
+  // 5. Review Explanation Details
   if (state.isReviewMode) {
     elements.reviewDetails.style.display = 'block';
     const isAnswered = currentSelected !== undefined;
@@ -219,10 +267,8 @@ function renderPalette() {
     if (isAttempted) attemptedCount++;
 
     if (!state.isReviewMode) {
-      // Before Submit: Attempted Green, Unattempted no color
       if (isAttempted) btn.classList.add('attempted');
     } else {
-      // In Review: Correct Green, Wrong Red, Unattempted no color
       if (isAttempted) {
         if (userAns === q.answer) btn.classList.add('rev-correct');
         else btn.classList.add('rev-wrong');
@@ -246,7 +292,9 @@ function clearResponse() {
   renderQuestion(state.currentIndex);
 }
 
-// Submit Test & Calculate UPSC CSAT Scores
+// ==========================================
+// 5. SUBMIT & SCORING
+// ==========================================
 function showSubmitConfirmation() {
   const attempted = Object.keys(state.userAnswers).length;
   const unattempted = state.activeQuestions.length - attempted;
@@ -345,33 +393,42 @@ function resetToStartModal() {
   elements.startModal.style.display = 'flex';
 }
 
-// Get Max Available Questions for current selection
-function getMaxAvailable() {
+// ==========================================
+// 6. POOL SIZING & COUNTER UPDATES
+// ==========================================
+function getAvailablePoolInfo() {
   const mode = document.querySelector('input[name="mockMode"]:checked').value;
   if (mode === 'yearwise') {
     const yr = parseInt(elements.selectedYear.value, 10);
     const count = state.allQuestions.filter(q => q.year === yr).length;
-    return Math.max(1, Math.min(80, count || 80));
+    return {
+      count: count,
+      label: yr ? `Year ${yr}` : 'Selected Year'
+    };
   }
-  return Math.max(1, Math.min(80, state.allQuestions.length || 80));
+  return {
+    count: state.allQuestions.length,
+    label: 'All Available Years Combined'
+  };
 }
 
-// Update Question Pool Limits & Dynamic Placeholder
 function updateConfigLimits() {
   const mode = document.querySelector('input[name="mockMode"]:checked').value;
   elements.yearSelectorGroup.style.display = (mode === 'yearwise') ? 'block' : 'none';
 
-  const maxQ = getMaxAvailable();
+  const poolInfo = getAvailablePoolInfo();
+  const maxQ = Math.max(1, Math.min(80, poolInfo.count || 80));
+
+  // Update Pool Banner Counter
+  elements.poolAvailableCount.textContent = `${poolInfo.count} Questions (${poolInfo.label})`;
+
+  // Update Input Bounds & Dynamic Placeholder
   elements.qCountLimits.textContent = `1 - ${maxQ}`;
   elements.numQuestionsInput.max = maxQ;
   elements.numQuestionsInput.placeholder = `e.g. 1 - ${maxQ}`;
 
-  // If existing input exceeds new pool ceiling, clamp it
   let currentVal = parseInt(elements.numQuestionsInput.value, 10);
-  if (isNaN(currentVal) || currentVal < 1) {
-    currentVal = maxQ;
-    elements.numQuestionsInput.value = currentVal;
-  } else if (currentVal > maxQ) {
+  if (isNaN(currentVal) || currentVal < 1 || currentVal > maxQ) {
     currentVal = maxQ;
     elements.numQuestionsInput.value = currentVal;
   }
@@ -379,7 +436,6 @@ function updateConfigLimits() {
   updateTimerHint(currentVal);
 }
 
-// Updates duration hint text
 function updateTimerHint(qCount) {
   const count = (!qCount || qCount < 1) ? 1 : qCount;
   const totalSeconds = count * 90;
@@ -389,7 +445,9 @@ function updateTimerHint(qCount) {
   elements.timerEstimateHint.textContent = `Calculated duration: ${timeText} (90s / question)`;
 }
 
-// Attach Event Handlers
+// ==========================================
+// 7. EVENT HANDLERS
+// ==========================================
 function setupEventListeners() {
   elements.btnFullscreen.addEventListener('click', toggleFullScreen);
 
@@ -404,8 +462,6 @@ function setupEventListeners() {
   });
   elements.btnConfirmSubmit.addEventListener('click', handleTestSubmit);
   elements.btnEnterReview.addEventListener('click', enterReviewMode);
-
-  // Single retake trigger in header
   elements.btnRetakeTop.addEventListener('click', resetToStartModal);
 
   elements.btnClear.addEventListener('click', clearResponse);
@@ -428,13 +484,13 @@ function setupEventListeners() {
     }
   });
 
-  // Mode and Year selector triggers
+  // Radio mode & Year selector changes
   document.querySelectorAll('input[name="mockMode"]').forEach(radio => {
     radio.addEventListener('change', updateConfigLimits);
   });
   elements.selectedYear.addEventListener('change', updateConfigLimits);
 
-  // Dynamic input: update duration hint as you type without blocking backspace
+  // Typeable input: updates hint as you type
   elements.numQuestionsInput.addEventListener('input', (e) => {
     const val = parseInt(e.target.value, 10);
     if (!isNaN(val) && val >= 1) {
@@ -442,9 +498,10 @@ function setupEventListeners() {
     }
   });
 
-  // Clamp and validate strictly on blur
+  // On blur: clamp within [1, maxQ]
   elements.numQuestionsInput.addEventListener('blur', (e) => {
-    const maxQ = getMaxAvailable();
+    const poolInfo = getAvailablePoolInfo();
+    const maxQ = Math.max(1, Math.min(80, poolInfo.count || 80));
     let val = parseInt(e.target.value, 10);
     if (isNaN(val) || val < 1) val = 1;
     if (val > maxQ) val = maxQ;
@@ -452,7 +509,7 @@ function setupEventListeners() {
     updateTimerHint(val);
   });
 
-  // Start Exam Confirmed (with final validation check)
+  // Start Exam Confirmed
   elements.btnStartConfirmed.addEventListener('click', () => {
     const mode = document.querySelector('input[name="mockMode"]:checked').value;
     let pool = [...state.allQuestions];
@@ -464,10 +521,10 @@ function setupEventListeners() {
       pool.sort(() => Math.random() - 0.5);
     }
 
-    const maxQ = Math.max(1, Math.min(80, pool.length || 80));
+    const maxQ = Math.max(1, Math.min(80, pool.length));
     let requestedCount = parseInt(elements.numQuestionsInput.value, 10);
     
-    // Strict bounds validation on start
+    // Bounds validation
     if (isNaN(requestedCount) || requestedCount < 1) requestedCount = 1;
     if (requestedCount > maxQ) requestedCount = maxQ;
 
