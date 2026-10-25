@@ -19,7 +19,6 @@ const elements = {
   btnFullscreen: document.getElementById('btnFullscreen'),
   btnSubmitTop: document.getElementById('btnSubmitTop'),
   btnRetakeTop: document.getElementById('btnRetakeTop'),
-  btnRetakeBottom: document.getElementById('btnRetakeBottom'),
   passageContainer: document.getElementById('passageContainer'),
   passageText: document.getElementById('passageText'),
   questionNumber: document.getElementById('questionNumber'),
@@ -56,7 +55,7 @@ const elements = {
   btnEnterReview: document.getElementById('btnEnterReview')
 };
 
-// Load Passages and Questions (supports 2024, expandable to 2023, 2022, etc.)
+// Load Passages and Questions
 async function loadTestData() {
   try {
     const [passRes, quest2024Res] = await Promise.all([
@@ -100,7 +99,7 @@ function renderTimer() {
   elements.timerDisplay.textContent = `${h}:${m}:${s}`;
 }
 
-// Fullscreen
+// Fullscreen Handler
 function toggleFullScreen() {
   const doc = window.document;
   const docEl = doc.documentElement;
@@ -122,11 +121,11 @@ function renderQuestion(index) {
   state.currentIndex = index;
   const q = state.activeQuestions[index];
 
-  // 1. Passage Rendering (Rendered above question with internal scroll)
+  // 1. Passage Rendering
   if (q.passageid && state.passages[q.passageid]) {
     elements.passageContainer.style.display = 'flex';
     elements.passageText.textContent = state.passages[q.passageid];
-    elements.passageText.scrollTop = 0; // Reset scroll to top
+    elements.passageText.scrollTop = 0;
   } else {
     elements.passageContainer.style.display = 'none';
   }
@@ -135,7 +134,7 @@ function renderQuestion(index) {
   elements.questionNumber.textContent = `Question ${index + 1} of ${state.activeQuestions.length}`;
   elements.questionText.textContent = q.question;
 
-  // 3. Topic & Year/QNo: Strictly shown only during Review
+  // 3. Topic & Year/QNo: Shown only during Review
   if (state.isReviewMode) {
     elements.reviewMetaGroup.style.display = 'flex';
     elements.topicTag.textContent = q.topic || 'General Aptitude';
@@ -220,10 +219,10 @@ function renderPalette() {
     if (isAttempted) attemptedCount++;
 
     if (!state.isReviewMode) {
-      // Rule: Attempted Green, Unattempted no color
+      // Before Submit: Attempted Green, Unattempted no color
       if (isAttempted) btn.classList.add('attempted');
     } else {
-      // Rule: Review -> Correct Green, Wrong Red, Unattempted no color
+      // In Review: Correct Green, Wrong Red, Unattempted no color
       if (isAttempted) {
         if (userAns === q.answer) btn.classList.add('rev-correct');
         else btn.classList.add('rev-wrong');
@@ -274,7 +273,7 @@ function handleTestSubmit() {
   const unattempted = total - (correct + wrong);
   const score = (correct * 2.5) - (wrong * (2.5 / 3));
   const maxPossible = total * 2.5;
-  const passThreshold = maxPossible * 0.33; // 33% qualifying
+  const passThreshold = maxPossible * 0.33;
   const isQualified = score >= passThreshold;
 
   document.getElementById('resTotal').textContent = total;
@@ -319,13 +318,11 @@ function enterReviewMode() {
 function resetToStartModal() {
   if (state.timerId) clearInterval(state.timerId);
 
-  // Reset State
   state.isReviewMode = false;
   state.currentIndex = 0;
   state.isPaused = false;
   state.userAnswers = {};
 
-  // Reset UI Controls
   elements.appHeaderTitle.textContent = "UPSC CSAT Mock Test Engine";
   elements.btnPause.style.display = 'inline-block';
   elements.btnPause.textContent = "Pause";
@@ -342,38 +339,54 @@ function resetToStartModal() {
     Attempted: <span class="legend-attempted">Green</span> | Unattempted: <span>No Color</span>
   `;
 
-  // Open config modal
   elements.resultModal.style.display = 'none';
   elements.submitModal.style.display = 'none';
+  updateConfigLimits();
   elements.startModal.style.display = 'flex';
 }
 
-// Modal Form Updates (Dynamic Time Calculation)
+// Get Max Available Questions for current selection
+function getMaxAvailable() {
+  const mode = document.querySelector('input[name="mockMode"]:checked').value;
+  if (mode === 'yearwise') {
+    const yr = parseInt(elements.selectedYear.value, 10);
+    const count = state.allQuestions.filter(q => q.year === yr).length;
+    return Math.max(1, Math.min(80, count || 80));
+  }
+  return Math.max(1, Math.min(80, state.allQuestions.length || 80));
+}
+
+// Update Question Pool Limits & Dynamic Placeholder
 function updateConfigLimits() {
   const mode = document.querySelector('input[name="mockMode"]:checked').value;
-  let availablePool = state.allQuestions;
+  elements.yearSelectorGroup.style.display = (mode === 'yearwise') ? 'block' : 'none';
 
-  if (mode === 'yearwise') {
-    elements.yearSelectorGroup.style.display = 'block';
-    const yr = parseInt(elements.selectedYear.value, 10);
-    availablePool = state.allQuestions.filter(q => q.year === yr);
-  } else {
-    elements.yearSelectorGroup.style.display = 'none';
-  }
-
-  const maxQ = Math.max(1, Math.min(80, availablePool.length || 80));
+  const maxQ = getMaxAvailable();
   elements.qCountLimits.textContent = `1 - ${maxQ}`;
   elements.numQuestionsInput.max = maxQ;
+  elements.numQuestionsInput.placeholder = `e.g. 1 - ${maxQ}`;
 
+  // If existing input exceeds new pool ceiling, clamp it
   let currentVal = parseInt(elements.numQuestionsInput.value, 10);
-  if (isNaN(currentVal) || currentVal < 1) currentVal = maxQ;
-  if (currentVal > maxQ) currentVal = maxQ;
-  elements.numQuestionsInput.value = currentVal;
+  if (isNaN(currentVal) || currentVal < 1) {
+    currentVal = maxQ;
+    elements.numQuestionsInput.value = currentVal;
+  } else if (currentVal > maxQ) {
+    currentVal = maxQ;
+    elements.numQuestionsInput.value = currentVal;
+  }
 
-  // 90s (1.5 min) per question
-  const totalSeconds = currentVal * 90;
+  updateTimerHint(currentVal);
+}
+
+// Updates duration hint text
+function updateTimerHint(qCount) {
+  const count = (!qCount || qCount < 1) ? 1 : qCount;
+  const totalSeconds = count * 90;
   const mins = Math.floor(totalSeconds / 60);
-  elements.timerEstimateHint.textContent = `Calculated duration: ${mins} minutes (90s / question)`;
+  const secs = totalSeconds % 60;
+  const timeText = secs > 0 ? `${mins}m ${secs}s` : `${mins} minutes`;
+  elements.timerEstimateHint.textContent = `Calculated duration: ${timeText} (90s / question)`;
 }
 
 // Attach Event Handlers
@@ -392,9 +405,8 @@ function setupEventListeners() {
   elements.btnConfirmSubmit.addEventListener('click', handleTestSubmit);
   elements.btnEnterReview.addEventListener('click', enterReviewMode);
 
-  // Retake handlers
+  // Single retake trigger in header
   elements.btnRetakeTop.addEventListener('click', resetToStartModal);
-  elements.btnRetakeBottom.addEventListener('click', resetToStartModal);
 
   elements.btnClear.addEventListener('click', clearResponse);
 
@@ -416,14 +428,31 @@ function setupEventListeners() {
     }
   });
 
-  // Modal interaction listeners
+  // Mode and Year selector triggers
   document.querySelectorAll('input[name="mockMode"]').forEach(radio => {
     radio.addEventListener('change', updateConfigLimits);
   });
   elements.selectedYear.addEventListener('change', updateConfigLimits);
-  elements.numQuestionsInput.addEventListener('input', updateConfigLimits);
 
-  // Start Exam Confirmed
+  // Dynamic input: update duration hint as you type without blocking backspace
+  elements.numQuestionsInput.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value, 10);
+    if (!isNaN(val) && val >= 1) {
+      updateTimerHint(val);
+    }
+  });
+
+  // Clamp and validate strictly on blur
+  elements.numQuestionsInput.addEventListener('blur', (e) => {
+    const maxQ = getMaxAvailable();
+    let val = parseInt(e.target.value, 10);
+    if (isNaN(val) || val < 1) val = 1;
+    if (val > maxQ) val = maxQ;
+    e.target.value = val;
+    updateTimerHint(val);
+  });
+
+  // Start Exam Confirmed (with final validation check)
   elements.btnStartConfirmed.addEventListener('click', () => {
     const mode = document.querySelector('input[name="mockMode"]:checked').value;
     let pool = [...state.allQuestions];
@@ -432,17 +461,19 @@ function setupEventListeners() {
       const yr = parseInt(elements.selectedYear.value, 10);
       pool = pool.filter(q => q.year === yr);
     } else {
-      // Custom mock across all years: shuffle pool
       pool.sort(() => Math.random() - 0.5);
     }
 
-    const requestedCount = parseInt(elements.numQuestionsInput.value, 10) || 80;
-    const actualCount = Math.min(requestedCount, pool.length);
+    const maxQ = Math.max(1, Math.min(80, pool.length || 80));
+    let requestedCount = parseInt(elements.numQuestionsInput.value, 10);
+    
+    // Strict bounds validation on start
+    if (isNaN(requestedCount) || requestedCount < 1) requestedCount = 1;
+    if (requestedCount > maxQ) requestedCount = maxQ;
 
-    state.activeQuestions = pool.slice(0, actualCount);
-
-    // UPSC CSAT Standard Time: 90 seconds (1.5 minutes) per question
-    state.timeRemaining = actualCount * 90;
+    elements.numQuestionsInput.value = requestedCount;
+    state.activeQuestions = pool.slice(0, requestedCount);
+    state.timeRemaining = requestedCount * 90;
 
     elements.startModal.style.display = 'none';
     renderQuestion(0);
