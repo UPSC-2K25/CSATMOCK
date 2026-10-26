@@ -1189,7 +1189,7 @@
     "passageid": null,
     "topic": "Logical Reasoning - Assignment of Numbers",
     "qno": 80,
-    "question": "In some code, letters P, Q, R, S and T represent numbers 4, 5, 10, 12 and 15. It is not known which letter represents which number. If Q − S = 2 and T = R + S + 3, then what is the value of P + R − T?",
+    "question": "In some code, letters P, Q, R, S and T represent numbers 4, 5, 10, 12 and 15. It is not known which letter represents which number. If Q − S = 2S and T = R + S + 3, then what is the value of P + R − T?",
     "options": [
       "1",
       "2",
